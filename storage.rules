@@ -1,0 +1,43 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && 
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Research article images
+    match /research_articles/{imageId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+    
+    // News article images
+    match /news_articles/{imageId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+    
+    // Development app images
+    match /development_apps/{imageId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+    
+    // Forum images
+    match /forum_images/{imageId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+  }
+}

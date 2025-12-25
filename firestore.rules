@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isModerator() {
+      return isSignedIn() && 
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'moderator');
+    }
+    
+    function hasPermission(permission) {
+      return isSignedIn() && 
+             (isAdmin() || 
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions[permission] == true);
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isAdmin() || request.auth.uid == userId;
+      allow delete: if isAdmin();
+    }
+    
+    // Research articles
+    match /research_articles/{articleId} {
+      allow read: if true; // Public read
+      allow create: if hasPermission('canPublishResearch');
+      allow update, delete: if isAdmin();
+    }
+    
+    // News articles
+    match /news_articles/{articleId} {
+      allow read: if true; // Public read
+      allow create: if hasPermission('canPublishNews');
+      allow update, delete: if isAdmin();
+    }
+    
+    // Development apps
+    match /development_apps/{appId} {
+      allow read: if true; // Public read
+      allow create: if hasPermission('canPublishDevelopment');
+      allow update, delete: if isAdmin();
+    }
+    
+    // Forum threads
+    match /threads/{threadId} {
+      allow read: if true; // Public read
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && request.auth.uid == resource.data.authorId;
+      allow delete: if isModerator() || (isSignedIn() && request.auth.uid == resource.data.authorId);
+    }
+    
+    // Forum comments
+    match /comments/{commentId} {
+      allow read: if true; // Public read
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && request.auth.uid == resource.data.authorId;
+      allow delete: if isModerator() || (isSignedIn() && request.auth.uid == resource.data.authorId);
+    }
+    
+    // Stats (visits and online users)
+    match /stats/{statId} {
+      allow read: if true; // Public read
+      allow write: if isSignedIn(); // Any authenticated user can update stats
+    }
+    
+    // Settings (contact info, etc.)
+    match /settings/{settingId} {
+      allow read: if true; // Public read
+      allow write: if isAdmin(); // Only admins can update settings
+    }
+    
+    // Presence (online users tracking)
+    match /presence/{userId} {
+      allow read: if true; // Public read
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+  }
+}

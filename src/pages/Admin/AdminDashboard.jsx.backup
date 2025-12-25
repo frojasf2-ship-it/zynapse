@@ -1,0 +1,623 @@
+import React, { useState, useEffect } from 'react';
+import {
+    Container,
+    Typography,
+    Box,
+    Paper,
+    Tabs,
+    Tab,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Button,
+    Select,
+    MenuItem,
+    Chip,
+    Avatar,
+    IconButton,
+    TextField,
+    Card,
+    CardContent,
+    Grid,
+    Divider,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Stack
+} from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { db, storage } from '../../firebase/firebaseConfig';
+import {
+    collection,
+    query,
+    onSnapshot,
+    doc,
+    updateDoc,
+    deleteDoc,
+    orderBy,
+    addDoc,
+    serverTimestamp
+} from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import {
+    Shield,
+    Users,
+    Database,
+    Layout,
+    Trash2,
+    MessageSquare,
+    TrendingUp,
+    Eye,
+    FileText,
+    Plus,
+    Edit,
+    Newspaper,
+    FlaskConical,
+    Smartphone,
+    Mail,
+    Phone,
+    MapPin
+} from 'lucide-react';
+
+const AdminDashboard = () => {
+    const { userProfile, isAdmin } = useAuth();
+    const navigate = useNavigate();
+    const [tabValue, setTabValue] = useState(0);
+    const [users, setUsers] = useState([]);
+    const [threads, setThreads] = useState([]);
+    const [comments, setComments] = useState([]);
+    const [researchArticles, setResearchArticles] = useState([]);
+    const [newsArticles, setNewsArticles] = useState([]);
+    const [apps, setApps] = useState([]);
+    const [stats, setStats] = useState({ visits: 0, users: 0, threads: 0, comments: 0 });
+    const [searchTerm, setSearchTerm] = useState('');
+    const [openDialog, setOpenDialog] = useState(false);
+    const [currentCollection, setCurrentCollection] = useState('');
+    const [formData, setFormData] = useState({ title: '', content: '', description: '', imageUrl: '' });
+    const [uploading, setUploading] = useState(false);
+    const [contactInfo, setContactInfo] = useState({ email: '', phone: '', address: '' });
+    const [contactSaving, setContactSaving] = useState(false);
+
+    useEffect(() => {
+        if (!isAdmin) {
+            navigate('/');
+            return;
+        }
+
+        const unsubscribers = [];
+
+        // Users
+        const usersQuery = query(collection(db, 'users'));
+        unsubscribers.push(onSnapshot(usersQuery, (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setUsers(data);
+            setStats(prev => ({ ...prev, users: data.length }));
+        }));
+
+        // Threads
+        const threadsQuery = query(collection(db, 'threads'), orderBy('createdAt', 'desc'));
+        unsubscribers.push(onSnapshot(threadsQuery, (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setThreads(data);
+            setStats(prev => ({ ...prev, threads: data.length }));
+        }));
+
+        // Comments
+        const commentsQuery = query(collection(db, 'comments'), orderBy('createdAt', 'desc'));
+        unsubscribers.push(onSnapshot(commentsQuery, (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setComments(data);
+            setStats(prev => ({ ...prev, comments: data.length }));
+        }));
+
+        // Research Articles
+        const researchQuery = query(collection(db, 'research_articles'), orderBy('createdAt', 'desc'));
+        unsubscribers.push(onSnapshot(researchQuery, (snapshot) => {
+            setResearchArticles(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        }));
+
+        // News Articles
+        const newsQuery = query(collection(db, 'news_articles'), orderBy('createdAt', 'desc'));
+        unsubscribers.push(onSnapshot(newsQuery, (snapshot) => {
+            setNewsArticles(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        }));
+
+        // Apps
+        const appsQuery = query(collection(db, 'development_apps'), orderBy('createdAt', 'desc'));
+        unsubscribers.push(onSnapshot(appsQuery, (snapshot) => {
+            setApps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        }));
+
+        // Stats
+        const statsDoc = doc(db, 'stats', 'global');
+        unsubscribers.push(onSnapshot(statsDoc, (snapshot) => {
+            if (snapshot.exists()) {
+                setStats(prev => ({ ...prev, visits: snapshot.data().visits || 0 }));
+            }
+        }));
+
+        return () => unsubscribers.forEach(unsub => unsub());
+    }, [isAdmin, navigate]);
+
+    const handleRoleChange = async (userId, newRole) => {
+        try {
+            await updateDoc(doc(db, 'users', userId), { role: newRole });
+        } catch (error) {
+            console.error("Error updating role: ", error);
+        }
+    };
+
+    const handleDelete = async (collectionName, docId) => {
+        if (window.confirm('¿Estás seguro de eliminar este elemento?')) {
+            try {
+                await deleteDoc(doc(db, collectionName, docId));
+            } catch (error) {
+                console.error("Error deleting: ", error);
+            }
+        }
+    };
+
+    const handleOpenDialog = (collection) => {
+        setCurrentCollection(collection);
+        setFormData({ title: '', content: '', description: '', imageUrl: '' });
+        setOpenDialog(true);
+    };
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setUploading(true);
+        try {
+            const storageRef = ref(storage, `${currentCollection}/${Date.now()}_${file.name}`);
+            const uploadTask = uploadBytesResumable(storageRef, file);
+
+            await new Promise((resolve, reject) => {
+                uploadTask.on('state_changed', null, reject, async () => {
+                    const url = await getDownloadURL(uploadTask.snapshot.ref);
+                    setFormData(prev => ({ ...prev, imageUrl: url }));
+                    resolve();
+                });
+            });
+        } catch (error) {
+            console.error("Error uploading image: ", error);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleSubmit = async () => {
+        try {
+            await addDoc(collection(db, currentCollection), {
+                ...formData,
+                createdAt: serverTimestamp(),
+                authorId: userProfile.email,
+                authorName: userProfile.displayName
+            });
+            setOpenDialog(false);
+            setFormData({ title: '', content: '', description: '', imageUrl: '' });
+        } catch (error) {
+            console.error("Error creating document: ", error);
+        }
+    };
+
+    const filteredThreads = threads.filter(thread =>
+        thread.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        thread.content?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const filteredComments = comments.filter(comment =>
+        comment.content?.toLowerCase().includes(searchTerm.toLowerCase())
+                    Gestiona los usuarios, contenidos y roles de la plataforma zynapse.
+                </Typography >
+            </Box >
+
+    <Paper elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 4, overflow: 'hidden' }}>
+        <Tabs
+            value={tabValue}
+            onChange={(e, v) => setTabValue(v)}
+            sx={{ borderBottom: 1, borderColor: 'divider', px: 2, pt: 1 }}
+            variant="scrollable"
+            scrollButtons="auto"
+        >
+            <Tab icon={<Users size={18} />} iconPosition="start" label="Usuarios" />
+            <Tab icon={<MessageSquare size={18} />} iconPosition="start" label="Foro" />
+            <Tab icon={<Database size={18} />} iconPosition="start" label="Estadísticas" />
+            <Tab icon={<FlaskConical size={18} />} iconPosition="start" label="Investigación" />
+            <Tab icon={<Newspaper size={18} />} iconPosition="start" label="Noticias" />
+            <Tab icon={<Smartphone size={18} />} iconPosition="start" label="Desarrollo" />
+        </Tabs>
+
+        <Box sx={{ p: 4 }}>
+            {/* TAB 0: USERS */}
+            {tabValue === 0 && (
+                <Box>
+                    <Typography variant="h6" sx={{ mb: 3, fontWeight: 700 }}>Gestión de Miembros</Typography>
+                    <TableContainer>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Usuario</TableCell>
+                                    <TableCell>Email</TableCell>
+                                    <TableCell>Rol</TableCell>
+                                    <TableCell>Acciones</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {users.map((user) => (
+                                    <TableRow key={user.id}>
+                                        <TableCell>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                                <Avatar src={user.photoURL} />
+                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>{user.displayName || 'N/A'}</Typography>
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell>{user.email}</TableCell>
+                                        <TableCell>
+                                            <Chip
+                                                label={user.role}
+                                                color={user.role === 'admin' ? 'primary' : user.role === 'moderator' ? 'secondary' : 'default'}
+                                                size="small"
+                                                sx={{ fontWeight: 700, textTransform: 'uppercase' }}
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <Select
+                                                value={user.role}
+                                                onChange={(e) => handleRoleChange(user.id, e.target.value)}
+                                                size="small"
+                                                sx={{ minWidth: 140 }}
+                                            >
+                                                <MenuItem value="subscriber">Suscriptor</MenuItem>
+                                                <MenuItem value="moderator">Moderador</MenuItem>
+                                                <MenuItem value="admin">Administrador</MenuItem>
+                                            </Select>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Box>
+            )}
+
+            {/* TAB 1: FORUM */}
+            {tabValue === 1 && (
+                <Box>
+                    <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="h6" sx={{ fontWeight: 700 }}>Contenido del Foro</Typography>
+                        <TextField
+                            size="small"
+                            placeholder="Buscar..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            sx={{ width: 300 }}
+                        />
+                    </Box>
+
+                    <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>Temas ({filteredThreads.length})</Typography>
+                    <TableContainer sx={{ mb: 4 }}>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Título</TableCell>
+                                    <TableCell>Autor</TableCell>
+                                    <TableCell>Fecha</TableCell>
+                                    <TableCell>Acciones</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {filteredThreads.map((thread) => (
+                                    <TableRow key={thread.id}>
+                                        <TableCell>
+                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>{thread.title}</Typography>
+                                        </TableCell>
+                                        <TableCell>{thread.authorName}</TableCell>
+                                        <TableCell>
+                                            <Typography variant="caption">
+                                                {thread.createdAt?.toDate().toLocaleDateString()}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton size="small" color="error" onClick={() => handleDelete('threads', thread.id)}>
+                                                <Trash2 size={16} />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+
+                    <Divider sx={{ my: 3 }} />
+
+                    <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>Comentarios ({filteredComments.length})</Typography>
+                    <TableContainer>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Contenido</TableCell>
+                                    <TableCell>Autor</TableCell>
+                                    <TableCell>Fecha</TableCell>
+                                    <TableCell>Acciones</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {filteredComments.slice(0, 20).map((comment) => (
+                                    <TableRow key={comment.id}>
+                                        <TableCell>
+                                            <Typography variant="body2">{comment.content?.substring(0, 100)}...</Typography>
+                                        </TableCell>
+                                        <TableCell>{comment.authorName}</TableCell>
+                                        <TableCell>
+                                            <Typography variant="caption">
+                                                {comment.createdAt?.toDate().toLocaleDateString()}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton size="small" color="error" onClick={() => handleDelete('comments', comment.id)}>
+                                                <Trash2 size={16} />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Box>
+            )}
+
+            {/* TAB 2: STATISTICS */}
+            {tabValue === 2 && (
+                <Box>
+                    <Typography variant="h6" sx={{ mb: 3, fontWeight: 700 }}>Estadísticas de la Plataforma</Typography>
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <Card elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 3 }}>
+                                <CardContent>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                        <Eye size={24} color="#1976d2" />
+                                        <Typography variant="h6" sx={{ ml: 1, fontWeight: 700 }}>Visitas</Typography>
+                                    </Box>
+                                    <Typography variant="h3" sx={{ fontWeight: 800, color: '#1976d2' }}>
+                                        {stats.visits.toLocaleString()}
+                                    </Typography>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <Card elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 3 }}>
+                                <CardContent>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                        <Users size={24} color="#2e7d32" />
+                                        <Typography variant="h6" sx={{ ml: 1, fontWeight: 700 }}>Usuarios</Typography>
+                                    </Box>
+                                    <Typography variant="h3" sx={{ fontWeight: 800, color: '#2e7d32' }}>
+                                        {stats.users}
+                                    </Typography>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <Card elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 3 }}>
+                                <CardContent>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                        <MessageSquare size={24} color="#ed6c02" />
+                                        <Typography variant="h6" sx={{ ml: 1, fontWeight: 700 }}>Temas</Typography>
+                                    </Box>
+                                    <Typography variant="h3" sx={{ fontWeight: 800, color: '#ed6c02' }}>
+                                        {stats.threads}
+                                    </Typography>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                        <Grid item xs={12} sm={6} md={3}>
+                            <Card elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 3 }}>
+                                <CardContent>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                        <FileText size={24} color="#9c27b0" />
+                                        <Typography variant="h6" sx={{ ml: 1, fontWeight: 700 }}>Comentarios</Typography>
+                                    </Box>
+                                    <Typography variant="h3" sx={{ fontWeight: 800, color: '#9c27b0' }}>
+                                        {stats.comments}
+                                    </Typography>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    </Grid>
+                </Box>
+            )}
+
+            {/* TAB 3: RESEARCH */}
+            {tabValue === 3 && (
+                <Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 700 }}>Artículos de Investigación</Typography>
+                        <Button
+                            variant="contained"
+                            startIcon={<Plus size={18} />}
+                            onClick={() => handleOpenDialog('research_articles')}
+                        >
+                            Nuevo Artículo
+                        </Button>
+                    </Box>
+                    <TableContainer>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Título</TableCell>
+                                    <TableCell>Fecha</TableCell>
+                                    <TableCell>Acciones</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {researchArticles.map((article) => (
+                                    <TableRow key={article.id}>
+                                        <TableCell>{article.title}</TableCell>
+                                        <TableCell>
+                                            {article.createdAt?.toDate().toLocaleDateString()}
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton size="small" color="error" onClick={() => handleDelete('research_articles', article.id)}>
+                                                <Trash2 size={16} />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Box>
+            )}
+
+            {/* TAB 4: NEWS */}
+            {tabValue === 4 && (
+                <Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 700 }}>Noticias</Typography>
+                        <Button
+                            variant="contained"
+                            startIcon={<Plus size={18} />}
+                            onClick={() => handleOpenDialog('news_articles')}
+                        >
+                            Nueva Noticia
+                        </Button>
+                    </Box>
+                    <TableContainer>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Título</TableCell>
+                                    <TableCell>Fecha</TableCell>
+                                    <TableCell>Acciones</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {newsArticles.map((article) => (
+                                    <TableRow key={article.id}>
+                                        <TableCell>{article.title}</TableCell>
+                                        <TableCell>
+                                            {article.createdAt?.toDate().toLocaleDateString()}
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton size="small" color="error" onClick={() => handleDelete('news_articles', article.id)}>
+                                                <Trash2 size={16} />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Box>
+            )}
+
+            {/* TAB 5: APPS */}
+            {tabValue === 5 && (
+                <Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 700 }}>Aplicaciones</Typography>
+                        <Button
+                            variant="contained"
+                            startIcon={<Plus size={18} />}
+                            onClick={() => handleOpenDialog('development_apps')}
+                        >
+                            Nueva App
+                        </Button>
+                    </Box>
+                    <TableContainer>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Título</TableCell>
+                                    <TableCell>Fecha</TableCell>
+                                    <TableCell>Acciones</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {apps.map((app) => (
+                                    <TableRow key={app.id}>
+                                        <TableCell>{app.title}</TableCell>
+                                        <TableCell>
+                                            {app.createdAt?.toDate().toLocaleDateString()}
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton size="small" color="error" onClick={() => handleDelete('development_apps', app.id)}>
+                                                <Trash2 size={16} />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Box>
+            )}
+        </Box>
+    </Paper>
+
+{/* CREATE DIALOG */ }
+<Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
+    <DialogTitle>Crear Nuevo Contenido</DialogTitle>
+    <DialogContent>
+        <Stack spacing={3} sx={{ mt: 2 }}>
+            <TextField
+                label="Título"
+                fullWidth
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            />
+            <TextField
+                label="Descripción"
+                fullWidth
+                multiline
+                rows={2}
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            />
+            <TextField
+                label="Contenido"
+                fullWidth
+                multiline
+                rows={6}
+                value={formData.content}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+            />
+            <Box>
+                <input
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    id="image-upload"
+                    type="file"
+                    onChange={handleImageUpload}
+                />
+                <label htmlFor="image-upload">
+                    <Button variant="outlined" component="span" disabled={uploading}>
+                        {uploading ? 'Subiendo...' : 'Subir Imagen'}
+                    </Button>
+                </label>
+                {formData.imageUrl && (
+                    <Box sx={{ mt: 2 }}>
+                        <img src={formData.imageUrl} alt="Preview" style={{ maxWidth: '100%', borderRadius: '8px' }} />
+                    </Box>
+                )}
+            </Box>
+        </Stack>
+    </DialogContent>
+    <DialogActions>
+        <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
+        <Button onClick={handleSubmit} variant="contained" disabled={!formData.title || !formData.content}>
+            Crear
+        </Button>
+    </DialogActions>
+</Dialog>
+        </Container >
+    );
+};
+
+export default AdminDashboard;
