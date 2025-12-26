@@ -22,6 +22,7 @@ import { db, storage } from '../../firebase/firebaseConfig';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '../../context/AuthContext';
+import NewsComments from '../../components/NewsComments';
 
 const News = () => {
     const [news, setNews] = useState([]);
@@ -182,6 +183,9 @@ const News = () => {
                                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                                         {article.content}
                                     </Typography>
+
+                                    {/* Comments Section */}
+                                    <NewsComments articleId={article.id} />
                                 </CardContent>
                             </Card>
                         </Grid>
