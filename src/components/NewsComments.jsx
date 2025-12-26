@@ -13,9 +13,9 @@ import {
     Paper
 } from '@mui/material';
 import { MessageCircle, Send, ChevronDown, ChevronUp } from 'lucide-react';
-import { db } from '../../firebase/firebaseConfig';
+import { db } from '@/firebase/firebaseConfig';
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
 
 const NewsComments = ({ articleId }) => {
     const [comments, setComments] = useState([]);
