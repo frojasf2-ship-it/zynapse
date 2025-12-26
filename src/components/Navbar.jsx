@@ -11,7 +11,7 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
-import { Eye, Users } from 'lucide-react';
+import { Eye, Users, Settings } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { usePresence, useVisitCounter } from '../hooks/usePresence';
@@ -126,9 +126,19 @@ const Navbar = () => {
               <Button
                 component={Link}
                 to="/admin"
-                sx={{ color: '#d32f2f', fontWeight: 600, textTransform: 'none' }}
+                variant="contained"
+                startIcon={<Settings size={18} />}
+                sx={{
+                  bgcolor: '#1976d2',
+                  color: 'white',
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  '&:hover': {
+                    bgcolor: '#1565c0'
+                  }
+                }}
               >
-                Admin
+                Dashboard
               </Button>
             )}
 

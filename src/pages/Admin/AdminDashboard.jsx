@@ -83,6 +83,9 @@ const AdminDashboard = () => {
     const [uploading, setUploading] = useState(false);
     const [contactInfo, setContactInfo] = useState({ email: '', phone: '', address: '' });
     const [contactSaving, setContactSaving] = useState(false);
+    const [messages, setMessages] = useState([]);
+    const [selectedMessage, setSelectedMessage] = useState(null);
+    const [messageDialogOpen, setMessageDialogOpen] = useState(false);
 
     useEffect(() => {
         if (!isAdmin) {
@@ -137,21 +140,15 @@ const AdminDashboard = () => {
             setApps(data);
         }));
 
-        // Stats
-        const statsDoc = doc(db, 'stats', 'global');
-        unsubscribers.push(onSnapshot(statsDoc, (snapshot) => {
-            if (snapshot.exists()) {
-                setStats(prev => ({ ...prev, visits: snapshot.data().visits || 0 }));
-            }
+        // Messages
+        const messagesQuery = query(collection(db, 'contact_messages'), orderBy('createdAt', 'desc'));
+        unsubscribers.push(onSnapshot(messagesQuery, (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setMessages(data);
         }));
 
-        // Contact Info
-        const contactDoc = doc(db, 'settings', 'contact');
-        unsubscribers.push(onSnapshot(contactDoc, (snapshot) => {
-            if (snapshot.exists()) {
-                setContactInfo(snapshot.data());
-            }
-        }));
+        // Stats
+        const statsDoc = doc(db, 'stats', 'global');
 
         return () => unsubscribers.forEach(unsub => unsub());
     }, [isAdmin, navigate]);
@@ -296,6 +293,7 @@ const AdminDashboard = () => {
                     <Tab icon={<Newspaper size={18} />} iconPosition="start" label="Noticias" />
                     <Tab icon={<Smartphone size={18} />} iconPosition="start" label="Desarrollo" />
                     <Tab icon={<Mail size={18} />} iconPosition="start" label="Contacto" />
+                    <Tab icon={<MessageSquare size={18} />} iconPosition="start" label="Mensajes" />
                 </Tabs>
 
                 <Box sx={{ p: 4 }}>
@@ -753,6 +751,80 @@ const AdminDashboard = () => {
                             </Grid>
                         </Box>
                     )}
+
+                    {tabValue === 7 && (
+                        <Box>
+                            <Typography variant="h6" sx={{ mb: 3, fontWeight: 700 }}>Mensajes de Contacto</Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
+                                Mensajes recibidos desde el formulario de contacto público.
+                            </Typography>
+
+                            <TableContainer>
+                                <Table>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Nombre</TableCell>
+                                            <TableCell>Email</TableCell>
+                                            <TableCell>Fecha</TableCell>
+                                            <TableCell>Estado</TableCell>
+                                            <TableCell align="right">Acciones</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {messages.map((msg) => (
+                                            <TableRow key={msg.id}>
+                                                <TableCell>{msg.name}</TableCell>
+                                                <TableCell>{msg.email}</TableCell>
+                                                <TableCell>
+                                                    {msg.createdAt?.toDate().toLocaleDateString()}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Chip
+                                                        label={msg.status === 'new' ? 'Nuevo' : msg.status === 'read' ? 'Leído' : 'Archivado'}
+                                                        color={msg.status === 'new' ? 'primary' : msg.status === 'read' ? 'default' : 'secondary'}
+                                                        size="small"
+                                                    />
+                                                </TableCell>
+                                                <TableCell align="right">
+                                                    <Button
+                                                        size="small"
+                                                        onClick={() => {
+                                                            setSelectedMessage(msg);
+                                                            setMessageDialogOpen(true);
+                                                            if (msg.status === 'new') {
+                                                                updateDoc(doc(db, 'contact_messages', msg.id), { status: 'read' });
+                                                            }
+                                                        }}
+                                                    >
+                                                        Ver
+                                                    </Button>
+                                                    <IconButton
+                                                        size="small"
+                                                        color="error"
+                                                        onClick={() => {
+                                                            if (window.confirm('¿Eliminar este mensaje?')) {
+                                                                deleteDoc(doc(db, 'contact_messages', msg.id));
+                                                            }
+                                                        }}
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </IconButton>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+
+                            {messages.length === 0 && (
+                                <Box sx={{ textAlign: 'center', py: 4 }}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        No hay mensajes aún
+                                    </Typography>
+                                </Box>
+                            )}
+                        </Box>
+                    )}
                 </Box>
             </Paper>
 
@@ -799,6 +871,52 @@ const AdminDashboard = () => {
                 <DialogActions>
                     <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
                     <Button onClick={handleSubmit} variant="contained">Crear</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Dialog for Viewing Messages */}
+            <Dialog open={messageDialogOpen} onClose={() => setMessageDialogOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Mensaje de Contacto</DialogTitle>
+                <DialogContent>
+                    {selectedMessage && (
+                        <Stack spacing={2} sx={{ mt: 1 }}>
+                            <Box>
+                                <Typography variant="subtitle2" color="text.secondary">Nombre:</Typography>
+                                <Typography variant="body1">{selectedMessage.name}</Typography>
+                            </Box>
+                            <Box>
+                                <Typography variant="subtitle2" color="text.secondary">Email:</Typography>
+                                <Typography variant="body1">{selectedMessage.email}</Typography>
+                            </Box>
+                            <Box>
+                                <Typography variant="subtitle2" color="text.secondary">Fecha:</Typography>
+                                <Typography variant="body1">
+                                    {selectedMessage.createdAt?.toDate().toLocaleString()}
+                                </Typography>
+                            </Box>
+                            <Divider />
+                            <Box>
+                                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>Mensaje:</Typography>
+                                <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                                    {selectedMessage.message}
+                                </Typography>
+                            </Box>
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setMessageDialogOpen(false)}>Cerrar</Button>
+                    {selectedMessage && selectedMessage.status !== 'archived' && (
+                        <Button
+                            onClick={() => {
+                                updateDoc(doc(db, 'contact_messages', selectedMessage.id), { status: 'archived' });
+                                setMessageDialogOpen(false);
+                            }}
+                            variant="outlined"
+                        >
+                            Archivar
+                        </Button>
+                    )}
                 </DialogActions>
             </Dialog>
         </Container>

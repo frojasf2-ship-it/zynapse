@@ -17,18 +17,30 @@ import {
     TextField,
     Stack
 } from '@mui/material';
-import { Smartphone, Calendar, User, Download, Plus } from 'lucide-react';
+import { Smartphone, Calendar, User, Download, Plus, Star, Edit, Link as LinkIcon } from 'lucide-react';
 import { db, storage } from '../../firebase/firebaseConfig';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '../../context/AuthContext';
+import AppReviews from '../../components/AppReviews';
 
 const Development = () => {
     const [apps, setApps] = useState([]);
-    const { currentUser, canPublishDevelopment } = useAuth();
+    const { currentUser, canPublishDevelopment, isAdmin } = useAuth();
     const [openDialog, setOpenDialog] = useState(false);
-    const [formData, setFormData] = useState({ title: '', description: '', content: '', imageUrl: '' });
+    const [formData, setFormData] = useState({
+        title: '',
+        description: '',
+        content: '',
+        imageUrl: '',
+        downloadUrl: '',
+        images: []
+    });
     const [uploading, setUploading] = useState(false);
+    const [reviewsDialogOpen, setReviewsDialogOpen] = useState(false);
+    const [selectedAppId, setSelectedAppId] = useState(null);
+    const [editMode, setEditMode] = useState(false);
+    const [editingAppId, setEditingAppId] = useState(null);
 
     useEffect(() => {
         const q = query(collection(db, 'development_apps'), orderBy('createdAt', 'desc'));
@@ -65,20 +77,47 @@ const Development = () => {
         }
     };
 
+    const handleEdit = (app) => {
+        setEditMode(true);
+        setEditingAppId(app.id);
+        setFormData({
+            title: app.title || '',
+            description: app.description || '',
+            content: app.content || '',
+            imageUrl: app.imageUrl || '',
+            downloadUrl: app.downloadUrl || '',
+            images: app.images || []
+        });
+        setOpenDialog(true);
+    };
+
     const handleSubmit = async () => {
         if (!formData.title || !formData.content) return;
 
         try {
-            await addDoc(collection(db, 'development_apps'), {
-                ...formData,
-                createdAt: serverTimestamp(),
-                authorId: currentUser.uid,
-                authorName: currentUser.displayName || 'Usuario Anónimo'
-            });
+            if (editMode && editingAppId) {
+                // Update existing app
+                await updateDoc(doc(db, 'development_apps', editingAppId), {
+                    ...formData,
+                    updatedAt: serverTimestamp()
+                });
+            } else {
+                // Create new app
+                await addDoc(collection(db, 'development_apps'), {
+                    ...formData,
+                    createdAt: serverTimestamp(),
+                    authorId: currentUser.uid,
+                    authorName: currentUser.displayName || 'Usuario Anónimo',
+                    averageRating: 0,
+                    reviewCount: 0
+                });
+            }
             setOpenDialog(false);
-            setFormData({ title: '', description: '', content: '', imageUrl: '' });
+            setFormData({ title: '', description: '', content: '', imageUrl: '', downloadUrl: '', images: [] });
+            setEditMode(false);
+            setEditingAppId(null);
         } catch (error) {
-            console.error("Error creating app: ", error);
+            console.error("Error saving app: ", error);
         }
     };
 
@@ -152,18 +191,69 @@ const Development = () => {
                                                 variant="outlined"
                                             />
                                         )}
+                                        {app.averageRating > 0 && (
+                                            <Chip
+                                                icon={<Star size={12} />}
+                                                label={`${app.averageRating} (${app.reviewCount || 0})`}
+                                                size="small"
+                                                color="primary"
+                                                variant="outlined"
+                                            />
+                                        )}
                                     </Box>
                                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, mb: 2 }}>
                                         {app.content}
                                     </Typography>
-                                    <Button
-                                        variant="contained"
-                                        startIcon={<Download size={18} />}
-                                        fullWidth
-                                        sx={{ mt: 'auto', borderRadius: 3, textTransform: 'none', fontWeight: 600 }}
-                                    >
-                                        Más información
-                                    </Button>
+                                    <Stack spacing={1}>
+                                        {app.downloadUrl && (
+                                            <Button
+                                                variant="contained"
+                                                startIcon={<Download size={18} />}
+                                                fullWidth
+                                                component="a"
+                                                href={app.downloadUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                sx={{ borderRadius: 3, textTransform: 'none', fontWeight: 600 }}
+                                            >
+                                                Descargar
+                                            </Button>
+                                        )}
+                                        {!app.downloadUrl && (
+                                            <Button
+                                                variant="contained"
+                                                startIcon={<LinkIcon size={18} />}
+                                                fullWidth
+                                                sx={{ borderRadius: 3, textTransform: 'none', fontWeight: 600 }}
+                                            >
+                                                Más información
+                                            </Button>
+                                        )}
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={<Star size={18} />}
+                                            fullWidth
+                                            onClick={() => {
+                                                setSelectedAppId(app.id);
+                                                setReviewsDialogOpen(true);
+                                            }}
+                                            sx={{ borderRadius: 3, textTransform: 'none' }}
+                                        >
+                                            Ver Calificaciones
+                                        </Button>
+                                        {(isAdmin || app.authorId === currentUser?.uid) && (
+                                            <Button
+                                                variant="outlined"
+                                                startIcon={<Edit size={18} />}
+                                                fullWidth
+                                                onClick={() => handleEdit(app)}
+                                                sx={{ borderRadius: 3, textTransform: 'none' }}
+                                                color="secondary"
+                                            >
+                                                Editar
+                                            </Button>
+                                        )}
+                                    </Stack>
                                 </CardContent>
                             </Card>
                         </Grid>
@@ -183,9 +273,14 @@ const Development = () => {
                 </Fab>
             )}
 
-            {/* Create App Dialog */}
-            <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
-                <DialogTitle>Publicar Aplicación</DialogTitle>
+            {/* Create/Edit App Dialog */}
+            <Dialog open={openDialog} onClose={() => {
+                setOpenDialog(false);
+                setEditMode(false);
+                setEditingAppId(null);
+                setFormData({ title: '', description: '', content: '', imageUrl: '', downloadUrl: '', images: [] });
+            }} maxWidth="md" fullWidth>
+                <DialogTitle>{editMode ? 'Editar Aplicación' : 'Publicar Aplicación'}</DialogTitle>
                 <DialogContent>
                     <Stack spacing={3} sx={{ mt: 2 }}>
                         <TextField
@@ -207,6 +302,14 @@ const Development = () => {
                             rows={6}
                             value={formData.content}
                             onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                        />
+                        <TextField
+                            label="URL de Descarga (opcional)"
+                            fullWidth
+                            placeholder="https://ejemplo.com/descarga"
+                            value={formData.downloadUrl}
+                            onChange={(e) => setFormData({ ...formData, downloadUrl: e.target.value })}
+                            helperText="Link directo para descargar la aplicación"
                         />
                         <Box>
                             <input
@@ -230,12 +333,27 @@ const Development = () => {
                     </Stack>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
+                    <Button onClick={() => {
+                        setOpenDialog(false);
+                        setEditMode(false);
+                        setEditingAppId(null);
+                        setFormData({ title: '', description: '', content: '', imageUrl: '', downloadUrl: '', images: [] });
+                    }}>Cancelar</Button>
                     <Button onClick={handleSubmit} variant="contained" disabled={!formData.title || !formData.content}>
-                        Publicar
+                        {editMode ? 'Actualizar' : 'Publicar'}
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* App Reviews Dialog */}
+            <AppReviews
+                appId={selectedAppId}
+                open={reviewsDialogOpen}
+                onClose={() => {
+                    setReviewsDialogOpen(false);
+                    setSelectedAppId(null);
+                }}
+            />
         </Container>
     );
 };

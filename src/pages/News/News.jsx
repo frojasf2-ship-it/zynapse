@@ -27,8 +27,16 @@ const News = () => {
     const [news, setNews] = useState([]);
     const { currentUser, canPublishNews } = useAuth();
     const [openDialog, setOpenDialog] = useState(false);
-    const [formData, setFormData] = useState({ title: '', description: '', content: '', imageUrl: '' });
+    const [formData, setFormData] = useState({ title: '', description: '', content: '', imageUrl: '', youtubeUrl: '' });
     const [uploading, setUploading] = useState(false);
+
+    // Extract YouTube video ID from various URL formats
+    const getYouTubeVideoId = (url) => {
+        if (!url) return null;
+        const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[7].length === 11) ? match[7] : null;
+    };
 
     useEffect(() => {
         const q = query(collection(db, 'news_articles'), orderBy('createdAt', 'desc'));
@@ -76,7 +84,7 @@ const News = () => {
                 authorName: currentUser.displayName || 'Usuario Anónimo'
             });
             setOpenDialog(false);
-            setFormData({ title: '', description: '', content: '', imageUrl: '' });
+            setFormData({ title: '', description: '', content: '', imageUrl: '', youtubeUrl: '' });
         } catch (error) {
             console.error("Error creating article: ", error);
         }
@@ -127,6 +135,24 @@ const News = () => {
                                         alt={article.title}
                                         sx={{ objectFit: 'cover' }}
                                     />
+                                )}
+                                {article.youtubeUrl && getYouTubeVideoId(article.youtubeUrl) && (
+                                    <Box sx={{ position: 'relative', paddingTop: '56.25%', width: '100%' }}>
+                                        <iframe
+                                            style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                left: 0,
+                                                width: '100%',
+                                                height: '100%',
+                                                border: 'none'
+                                            }}
+                                            src={`https://www.youtube.com/embed/${getYouTubeVideoId(article.youtubeUrl)}`}
+                                            title={article.title}
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                            allowFullScreen
+                                        />
+                                    </Box>
                                 )}
                                 <CardContent sx={{ flexGrow: 1 }}>
                                     <Typography variant="h5" sx={{ fontWeight: 700, mb: 2 }}>
@@ -199,6 +225,14 @@ const News = () => {
                             rows={6}
                             value={formData.content}
                             onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                        />
+                        <TextField
+                            label="URL de YouTube (opcional)"
+                            fullWidth
+                            placeholder="https://www.youtube.com/watch?v=..."
+                            value={formData.youtubeUrl}
+                            onChange={(e) => setFormData({ ...formData, youtubeUrl: e.target.value })}
+                            helperText="Pega el enlace de un video de YouTube para embutirlo en la noticia"
                         />
                         <Box>
                             <input

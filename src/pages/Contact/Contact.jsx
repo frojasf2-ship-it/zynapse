@@ -12,7 +12,7 @@ import {
 } from '@mui/material';
 import { Mail, Phone, MapPin, Send } from 'lucide-react';
 import { db } from '../../firebase/firebaseConfig';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 const Contact = () => {
     const [contactInfo, setContactInfo] = useState({
@@ -42,12 +42,25 @@ const Contact = () => {
         fetchContactInfo();
     }, []);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        // Aquí puedes agregar la lógica para enviar el formulario
-        console.log('Form submitted:', formData);
-        alert('Mensaje enviado. Te contactaremos pronto.');
-        setFormData({ name: '', email: '', message: '' });
+
+        try {
+            // Guardar mensaje en Firestore
+            await addDoc(collection(db, 'contact_messages'), {
+                name: formData.name,
+                email: formData.email,
+                message: formData.message,
+                status: 'new',
+                createdAt: serverTimestamp()
+            });
+
+            alert('✅ Mensaje enviado exitosamente. Te contactaremos pronto.');
+            setFormData({ name: '', email: '', message: '' });
+        } catch (error) {
+            console.error('Error sending message:', error);
+            alert('❌ Error al enviar el mensaje. Por favor intenta de nuevo.');
+        }
     };
 
     return (
